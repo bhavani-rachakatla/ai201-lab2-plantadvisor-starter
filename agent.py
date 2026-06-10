@@ -104,28 +104,67 @@ def run_agent(user_message: str, history: list) -> str:
     """
     Run the plant care agent for one user turn and return its response.
 
-    TODO — Milestone 2:
-
-    The agent loop follows a specific pattern that you'll implement here. Read
-    specs/agent-loop-spec.md carefully before writing any code — understand the
-    full loop before implementing any part of it.
-
-    The loop works like this:
-      1. Build a messages list: system prompt + conversation history + new user message
+    The agent loop:
+      1. Build messages list: system prompt + conversation history + new user message
       2. Call the LLM with messages and TOOL_DEFINITIONS
-      3. If the response contains tool_calls:
-           a. Append the assistant message (with tool_calls) to messages
-           b. For each tool call: execute via dispatch_tool(), append the result
-           c. Call the LLM again with the updated messages
-           d. Repeat until no more tool_calls (or MAX_TOOL_ROUNDS is reached)
-      4. Return the final text response
-
-    Key details to get right:
-      - The assistant message must be appended BEFORE tool results
-      - Tool result messages use role="tool" with a tool_call_id field
-      - Append the assistant's message object directly (not just its content)
-      - The history format from Gradio: list of [user_message, assistant_message] pairs
-
-    Before writing code, complete specs/agent-loop-spec.md.
+      3. If tool_calls exist: execute them, append results, call LLM again
+      4. Repeat until no tool_calls or MAX_TOOL_ROUNDS reached
+      5. Return the final text response
     """
-    return "🌱 Agent not yet implemented. Complete Milestone 2 to activate the Plant Advisor."
+    # 1. Build the messages list
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    # Add conversation history (Gradio format: list of [user_msg, assistant_msg] pairs)
+    for user_msg, assistant_msg in history:
+        messages.append({"role": "user", "content": user_msg})
+        if assistant_msg:
+            messages.append({"role": "assistant", "content": assistant_msg})
+
+    # Add the new user message
+    messages.append({"role": "user", "content": user_message})
+
+    # 2. Agent loop - call LLM, execute tools, repeat
+    for round_num in range(MAX_TOOL_ROUNDS):
+        print(f"[Agent] Round {round_num + 1}")
+
+        # Call the LLM
+        response = _client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            tools=TOOL_DEFINITIONS,
+            tool_choice="auto",
+        )
+
+        assistant_message = response.choices[0].message
+
+        # 3. Check if there are tool calls
+        if not assistant_message.tool_calls:
+            # No tool calls - LLM has a final answer
+            print("[Agent] No tool calls - returning final response")
+            return assistant_message.content or "I'm not sure how to help with that."
+
+        # 4. There are tool calls - process them
+        print(f"[Agent] Processing {len(assistant_message.tool_calls)} tool call(s)")
+
+        # Append the assistant message BEFORE tool results (API requirement)
+        messages.append(assistant_message)
+
+        # Execute each tool call and append results
+        for tool_call in assistant_message.tool_calls:
+            tool_name = tool_call.function.name
+            tool_args = json.loads(tool_call.function.arguments)
+            tool_result = dispatch_tool(tool_name, tool_args)
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_result,
+            })
+
+    # MAX_TOOL_ROUNDS reached - make one final call without tools to get a response
+    print(f"[Agent] Max rounds ({MAX_TOOL_ROUNDS}) reached - requesting final response")
+    response = _client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=messages,
+    )
+    return response.choices[0].message.content or "I encountered an issue. Please try again."

@@ -24,38 +24,38 @@ def lookup_plant(plant_name: str) -> dict:
     """
     Search the plant database for a plant by name and return its care information.
 
-    TODO — Milestone 1:
-
-    Right now this always returns a "not found" response. Your job is to implement
-    the search logic so it can actually find plants.
-
-    The plant database (_plant_db) is a dict where keys are lowercase slugs like
-    "pothos", "snake_plant", "fiddle_leaf_fig". Each plant also has a "display_name"
-    field and an "aliases" list with common alternate names.
-
-    Your implementation should handle all three:
-      1. Direct key match (e.g., "pothos" → finds "pothos")
-      2. Display name match (e.g., "Pothos" → finds "pothos")
-      3. Alias match (e.g., "devil's ivy" → finds "pothos")
-
-    All matching should be case-insensitive. Strip whitespace from the input.
+    Searches in order: direct key match → display name match → alias match.
+    All matching is case-insensitive with whitespace stripped.
 
     Return format when found:
       {"found": True, "plant": <the full plant dict>}
 
     Return format when not found:
       {"found": False, "name": <original input>, "message": <helpful string>}
-
-    The message in the not-found case matters — the agent will use it to decide
-    what to tell the user. Your spec has a dedicated field for this — think about
-    what information would actually be helpful to the agent.
-
-    Before writing code, complete the lookup_plant section of specs/tool-functions-spec.md.
     """
+    # Normalize input: strip whitespace and convert to lowercase
+    normalized = plant_name.strip().lower()
+
+    # 1. Direct key match (O(1) dict lookup)
+    if normalized in _plant_db:
+        return {"found": True, "plant": _plant_db[normalized]}
+
+    # 2. Display name match
+    for key, plant in _plant_db.items():
+        if plant["display_name"].lower() == normalized:
+            return {"found": True, "plant": plant}
+
+    # 3. Alias match - check if normalized input matches any alias
+    for key, plant in _plant_db.items():
+        for alias in plant["aliases"]:
+            if alias.lower() == normalized:
+                return {"found": True, "plant": plant}
+
+    # Not found - return helpful message for the agent
     return {
         "found": False,
         "name": plant_name,
-        "message": "Plant lookup not yet implemented. Complete Milestone 1.",
+        "message": f"No plant matching '{plant_name}' found in the database. The user may be asking about a plant we don't have information on. You can offer general advice based on what type of plant it might be, or ask the user for more details.",
     }
 
 
